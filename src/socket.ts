@@ -1,32 +1,35 @@
-import { Server, Socket} from "socket.io";
+import { Server, Socket } from "socket.io";
 
-export function handleSockets(io: Server){
-    const connectedUsers:Map<string, string> = new Map<string, string>();
+interface ConnectedUser {
+  socketId: string;
+  username: string;
+}
 
-    io.on("connection", (socket: Socket) => {
-            const user = socket.handshake.query.user as string || '<desconocido>';
-            connectedUsers.set(socket.id, user);
-            console.log('Socket: ', socket.id, 'User: ', user);
-            io.emit('users:update', {users: [...connectedUsers.values()]});
+export function handleSockets(io: Server) {
+  // Lista de usuarios conectados
+  let users: ConnectedUser[] = [];
 
-            setTimeout(() => {
-                socket.emit("connected", {message: "You are connected!"});
-            }, 1000);
+  function broadcastUsers() {
+    io.emit("users:update", users);
+  }
 
-            socket.on("message", (data) =>{
-                console.log(`${socket.id}: ${data}`); 
-            io.emit("message", {
-                socketId: socket.id,
-                user: user,
-                time: Date.now(),
-                message: data
-            });
-        });
-
-        socket.on("disconnect", () => {
-            console.log("User disconnected:", socket.id);
-            connectedUsers.delete(socket.id);
-            io.emit('users:update', connectedUsers.entries());
-        });
+  io.on("connection", (socket: Socket) => {
+    // Cuando el usuario hace join, guarda el username y actualiza la lista
+    socket.on("join", ({ username }) => {
+      socket.data.username = username;
+      // Evita duplicados por reconexión
+      users = users.filter(u => u.socketId !== socket.id);
+      users.push({ socketId: socket.id, username });
+      broadcastUsers();
     });
+
+    // Cuando se desconecta, elimina de la lista y actualiza
+    socket.on("disconnect", () => {
+      users = users.filter(u => u.socketId !== socket.id);
+      broadcastUsers();
+    });
+
+    // (Opcional) Si quieres emitir la lista al conectar aunque no haya hecho join
+    socket.emit("users:update", users);
+  });
 }
